@@ -1,0 +1,12 @@
+{
+  "total_requests": 32026,
+  "total_included_requests": 5141,
+  "resolved_without_follow_up": 1899,
+  "excluded_time_travel": 0,
+  "excluded_censored": 26885,
+  "black_hole_requests": 26885,
+  "observation_window_censored": 0,
+  "unknown_identity_requests": 4955,
+  "missing_attachment_anomaly_requests": 5250,
+  "resolved_without_follow_up_pct": 36.9383
+}

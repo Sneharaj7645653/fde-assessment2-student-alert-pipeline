@@ -1,0 +1,10 @@
+# Virtual environments — never commit these; see README "Setup" to recreate.
+.venv/
+.venv_review/
+venv/
+
+__pycache__/
+*.pyc
+.pytest_cache/
+
+.DS_Store

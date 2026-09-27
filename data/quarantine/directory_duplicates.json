@@ -1,0 +1,24 @@
+[
+  {
+    "student_id": "24bcs10011",
+    "enrollment_number": "ENR-2024011",
+    "official_email": "24bcs10011@university.edu",
+    "personal_email": "student.test11@gmail.com",
+    "student_name": "Student 11",
+    "department": "Computer Science",
+    "program": "B.Tech",
+    "year": 2024,
+    "active_status": "Active"
+  },
+  {
+    "student_id": "24bcs10051",
+    "enrollment_number": "ENR-2024051",
+    "official_email": "24bcs10051@university.edu",
+    "personal_email": "student.test51@gmail.com",
+    "student_name": "Student 51",
+    "department": "Mechanical",
+    "program": "B.Tech",
+    "year": 2024,
+    "active_status": "Inactive"
+  }
+]
