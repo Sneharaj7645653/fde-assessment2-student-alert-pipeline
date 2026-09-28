@@ -1,18 +1,18 @@
-2026-09-27 22:40:14,767 | INFO | PHASE START | EXTRACTION
-2026-09-27 22:40:14,945 | INFO | Extraction phase completed successfully
-2026-09-27 22:40:14,945 | INFO | PHASE END | EXTRACTION | status=success
-2026-09-27 22:40:15,268 | INFO | EXTRACTION -> VALIDATION | inbox | rows=34126 -> rows=33222 | shape=(34126, 8) -> shape=(33222, 12)
-2026-09-27 22:40:15,283 | INFO | EXTRACTION -> VALIDATION | directory | rows=2502 -> rows=2500 | shape=(2502, 9) -> shape=(2500, 9)
-2026-09-27 22:40:15,291 | INFO | EXTRACTION -> VALIDATION | api | rows=3186 -> rows=2991 | shape=(3186, 1) -> shape=(2991, 5)
-2026-09-27 22:40:15,291 | INFO | PHASE START | VALIDATION
-2026-09-27 22:40:15,725 | INFO | Validation phase completed successfully
-2026-09-27 22:40:15,725 | INFO | PHASE END | VALIDATION | status=success
-2026-09-27 22:40:15,901 | INFO | VALIDATION -> MODELING | inbox | rows=33222 -> rows=32026 | shape=(33222, 12) -> shape=(32026, 15)
-2026-09-27 22:40:15,901 | INFO | PHASE START | MODELING
-2026-09-27 22:40:40,410 | INFO | Modeling phase completed successfully
-2026-09-27 22:40:40,410 | INFO | PHASE END | MODELING | status=success
-2026-09-27 22:40:40,540 | INFO | MODELING | student_requests | rows=32026 -> rows=32026 | shape=(32026, 15) -> shape=(32026, 15)
-2026-09-27 22:40:40,540 | INFO | PHASE START | VISUALIZATION
-2026-09-27 22:40:40,649 | INFO | Visualization phase completed successfully | output=/Users/sneharaj/Desktop/A2_V2/findings/final_business_evidence_2026-09-27.md
-2026-09-27 22:40:40,649 | INFO | PHASE END | VISUALIZATION | status=success
-2026-09-27 22:40:40,777 | INFO | PIPELINE COMPLETE | status=success
+2026-09-28 10:08:54,876 | INFO | PHASE START | EXTRACTION
+2026-09-28 10:08:55,047 | INFO | Extraction phase completed successfully
+2026-09-28 10:08:55,047 | INFO | PHASE END | EXTRACTION | status=success
+2026-09-28 10:08:55,273 | INFO | EXTRACTION -> VALIDATION | inbox | rows=34126 -> rows=33222 | shape=(34126, 8) -> shape=(33222, 12)
+2026-09-28 10:08:55,285 | INFO | EXTRACTION -> VALIDATION | directory | rows=2502 -> rows=2500 | shape=(2502, 9) -> shape=(2500, 9)
+2026-09-28 10:08:55,292 | INFO | EXTRACTION -> VALIDATION | api | rows=3186 -> rows=2991 | shape=(3186, 1) -> shape=(2991, 5)
+2026-09-28 10:08:55,292 | INFO | PHASE START | VALIDATION
+2026-09-28 10:08:55,706 | INFO | Validation phase completed successfully
+2026-09-28 10:08:55,706 | INFO | PHASE END | VALIDATION | status=success
+2026-09-28 10:08:55,864 | INFO | VALIDATION -> MODELING | inbox | rows=33222 -> rows=32026 | shape=(33222, 12) -> shape=(32026, 15)
+2026-09-28 10:08:55,864 | INFO | PHASE START | MODELING
+2026-09-28 10:09:19,268 | INFO | Modeling phase completed successfully
+2026-09-28 10:09:19,268 | INFO | PHASE END | MODELING | status=success
+2026-09-28 10:09:19,388 | INFO | MODELING | student_requests | rows=32026 -> rows=32026 | shape=(32026, 15) -> shape=(32026, 15)
+2026-09-28 10:09:19,388 | INFO | PHASE START | VISUALIZATION
+2026-09-28 10:09:19,511 | INFO | Visualization phase completed successfully | output=/Users/sneharaj/Desktop/A2_V2/findings/final_business_evidence_2026-09-28.md
+2026-09-28 10:09:19,511 | INFO | PHASE END | VISUALIZATION | status=success
+2026-09-28 10:09:19,632 | INFO | PIPELINE COMPLETE | status=success

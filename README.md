@@ -1,114 +1,188 @@
 # Student Alert Intake Analytics & Centralized Request System Evidence
 
-## Project Title & Executive Summary
-This repository implements a full-stage data engineering pipeline to prove the operational burden created by the current shared student inbox and justify the need for a centralized request system. The solution follows a strict evidence-first workflow: raw inbox data is extracted, validated, reconstructed into request lifecycles, and modeled into a KPI that measures how often a student request is resolved without requiring a student to follow up again.
+## Business objective
+This repository implements a full-stage data engineering pipeline to measure the operational burden created by the shared student alert inbox and to produce evidence for the case for a centralized request system. The workflow is intentionally evidence-first: raw inbox records are extracted, validated, reconstructed into request lifecycles, and modeled into a KPI that measures the percentage of requests resolved without requiring a student to follow up again.
 
-The business objective is not simply to add a chatbot. The objective is to show, with operational evidence, that the current shared inbox is fragmented, poorly resolved, and creates recurring additional burden on students who must re-contact the system via phone, walk-ins, or repeated email threads. The resulting KPI and business evidence package supports the case for a centralized request system as a process and service improvement, not just a conversational layer.
+The goal is not simply to add a chatbot or route messages more efficiently. The objective is to show, with operational evidence, that the current shared inbox is fragmented, poorly resolved, and creates recurring additional burden on students who must re-contact the system by phone, walk-in, or repeated email threads. The resulting KPI and evidence package supports a centralized request system as a process and service improvement, not just a conversational layer.
 
-## Architecture & Data Flow
-The pipeline is organized into four primary data layers, each representing a deliberate stage of the FDE evidence chain. See `findings/00_source_map_and_workflow_diagram.md` for the full source map and a diagram of this flow, and `findings/08_review_findings_and_fixes.md` for the record of a code-quality review this project went through, including what was broken and how it was fixed.
+This project follows strict FDE principles. Broken, missing, malformed, or ambiguous source records are preserved in quarantine and reported clearly rather than silently repaired. That preserves the integrity of the evidence and makes the operational problem visible in a defensible, audit-friendly way.
 
-### 1) data/raw/ — Extraction
-The raw layer captures immutable source evidence from the operational datasets used by the pipeline.
+## KPI definitions
+The headline KPI for this project is:
 
-- `raw_student_alert_inbox_final.csv` — the student inbox
-- `student_directory_master.csv` — identity resolution and the `student_id` <-> `enrollment_number` crosswalk
-- `api_student_interactions.json` — phone/walk-in follow-up contacts (mixed schema, includes bare HTTP error envelopes)
-- `mess_roster_updates.csv`, `finance_fee_disputes_Q3.csv`, `academic_credits_master.csv` — **resolution-event sources**. Each records when a student's underlying issue was actually closed out in a downstream operational system (mess clearance, a finance dispute, an academic-credit correction). These are joined against the request lifecycle in the modeling stage to determine whether a request was ever resolved.
+- Percentage of resolved requests without a student follow-up = resolved requests with no follow-up / resolved requests * 100
 
-This stage is intentionally read-only from the perspective of downstream logic. The extraction layer preserves source fidelity and writes copies into `data/raw/` so that evaluation and forensic review can always trace back to the original operational facts. Two additional sources — `admin_bldg_wifi_auth_logs.csv` and `legacy_alert_archive_2024.csv` — were evaluated and are **not yet integrated**, because neither carries a usable student identifier for the current request model (see the source map for why).
+The model counts a request as:
+- Resolved when it is matched to a downstream operational resolution event for the same student after the request was submitted
+- Follow-up required when the student must re-engage through phone, walk-in, or follow-up contact after the original submission
+- Unresolved or Black-Hole when a request is older than the observation window and no valid downstream resolution is found
+- Censored when a request is still within the active observation window and therefore not yet mature enough to judge conclusively
 
-### 2) data/validated/ & data/quarantine/ — Validation & Anomaly Isolation
-The validation layer enforces strict data-quality rules without silently fixing source issues.
+This KPI is intentionally computed only over requests with a confirmed resolution, because including all requests in the denominator would hide the difference between a truly resolved case and one that simply has not had enough time to complete. The evidence package reports both the numerator and the denominator to keep the operational interpretation transparent.
 
-- `data/validated/`: accepted records that pass the stage rules, including `validated_resolution_events.csv` — the normalized, student-linked union of the three resolution sources above
-- `data/quarantine/`: records that are explicitly isolated because they violate critical rules
+## Source data and extraction
 
-Examples of quarantined records include:
-- API error envelopes such as `500 Internal Server Error` or `504 Gateway Timeout`
-- Critical missing values such as null/blank inbox identifiers or API interaction identifiers
-- Duplicate identity, duplicate inbox records (including retry-suffixed re-deliveries, e.g. `MSG-1234-dup2`), or resolution-event rows whose enrollment number/student id can't be resolved — all retained for review rather than silently merged or dropped
+| Source | Retrieval mode | Input path | Description |
+| --- | --- | --- | --- |
+| Student inbox | CSV file parsing | `data/raw/raw_student_alert_inbox_final.csv` | Primary inbox evidence for student requests, message metadata, timestamps, and request threads |
+| Student directory | CSV file parsing | `data/raw/student_directory_master.csv` | Identity crosswalk used to resolve `student_id` and `enrollment_number` references |
+| API follow-up interactions | JSON file parsing | `data/raw/api_student_interactions.json` | Mixed-schema follow-up records such as phone calls, walk-ins, and repeated contact attempts; malformed HTTP-style error envelopes are isolated for review |
+| Mess roster updates | CSV file parsing and SQLite querying | `data/raw/mess_roster_updates.csv` and SQLite operational data | One of the downstream resolution sources used to infer when a student's underlying issue was actually closed |
+| Finance fee disputes | CSV file parsing and SQLite querying | `data/raw/finance_fee_disputes_Q3.csv` and SQLite operational data | Second downstream resolution source used to confirm closure of a student issue |
+| Academic credits master | CSV file parsing and SQLite querying | `data/raw/academic_credits_master.csv` and SQLite operational data | Third downstream resolution source used to confirm academic correction or closeout events |
+| SQLite operational evidence | SQLite querying | configured SQLite source files | Structured operational tables used to join student records to downstream resolution events while preserving source fidelity |
 
-This stage preserves the operational evidence while separating anomalies from the valid dataset used in later modeling.
+The extraction layer uses a dual-retrieval design. CSV and JSON sources are read directly from files, while SQLite-backed operational evidence is queried through the database layer. This allows the pipeline to ingest both file-based operational exports and structured relational records without rewriting the original evidence. The source files are preserved as raw artifacts, and only validated records move forward into the modeled lifecycle.
 
-### 3) data/modeled/ — Workflow Reconstruction
-The modeling layer reconstructs the operational lifecycle of each student request by grouping related emails into request threads, matching each thread against the earliest available resolution event for that student, and combining that with API follow-up events.
+## Pipeline Architecture
 
-Outputs include:
-- `student_requests.csv`
-- `kpi_metrics.json`
+### Data Lifecycle Phases
 
-This stage calculates the key operational KPI: the percentage of requests **with a confirmed resolution** that were resolved without any student follow-up. Requests with no confirmed resolution anywhere in the systems we can check are reported separately as `Black-Hole` cases rather than assumed resolved.
+```mermaid
+flowchart LR
+    Raw["Raw Data"] --> Validated["Validated Data"]
+    Validated --> Model["Modeled Request Data"]
+    Model --> Evidence["Business Evidence"]
 
-### 4) findings/ — Business Evidence Generation
-The findings layer translates the metrics into leadership-ready evidence.
+    Validated -->|anomalies| Quarantine["Quarantined Data"]
+```
 
-- timestamped markdown evidence reports
-- PNG charts for operational review
-- supporting methodology and specification notes for each pipeline stage
-- the source map / workflow diagram (`00_source_map_and_workflow_diagram.md`) and the review record (`08_review_findings_and_fixes.md`)
+### System Architecture
 
-This is the artifact layer used to support administrative decision-making and justify the proposal for a centralized request system.
+```mermaid
+flowchart TD
+    A["Dual-Mode Sources\nCSV/JSON Files"] --> B["Pipeline Orchestrator"]
+    C["Dual-Mode Sources\nSQLite"] --> B
 
-## Setup
+    B --> D["Extraction"]
+    D --> E["Validation"]
+    E --> F["Modeling"]
+    F --> G["Visualization"]
+```
+
+## Install, run, and test
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate        # .venv\Scripts\activate on Windows
 pip install -r requirements.txt
 ```
 
-## Execution Instructions
-Use the commands below from the repository root, with the virtual environment above activated.
+From the repository root, with the virtual environment activated:
 
-- End-to-end pipeline: `python3 -m src.pipeline`
-- Test suite: `pytest`
+```bash
+python3 -m src.pipeline
+```
 
-The pipeline is designed to be idempotent and overwrite outputs cleanly when rerun, while preserving the audit trail in the logs and quarantined datasets. A full run takes 20-30 seconds, most of it in the modeling stage's per-request resolution matching.
+Run the automated checks:
 
-## FDE Assumptions & Guardrails
-This section is critical to the grading and design intent of the project.
+```bash
+pytest
+```
 
-### No Silent Fixes
-The pipeline does not silently repair broken data.
+The pipeline is designed to be idempotent: rerunning it overwrites outputs cleanly while preserving the audit trail in the logs, validated files, and quarantine datasets. A full run typically completes in a short time, with most of the runtime spent reconstructing per-request matches and downstream resolution events.
 
-- API error records are triaged to `data/quarantine/` rather than dropped from the operational narrative.
-- Critical null values in inbox, directory, and API records are quarantined rather than backfilled.
-- This preserves evidence and avoids creating the false impression that a missing or invalid record was successfully processed.
+## Pipeline Architecture
 
-This rule aligns with the FDE principle that the raw problem must remain visible and auditable, even when it is not valid for downstream analytics.
+### Data Lifecycle Phases
 
-### Identity Preservation
-The model explicitly preserves identity burden instead of masking it.
+```mermaid
+flowchart LR
+    Raw["Raw Data"] --> Validated["Validated Data"]
+    Validated --> Model["Modeled Request Data"]
+    Model --> Evidence["Business Evidence"]
 
-- Unmapped personal Gmail or unknown sender addresses are retained and marked as `Unknown Identity` rather than filtered out.
-- This is intentional: the operational metric is about the burden imposed on students and staff when the inbox is not properly matched to a known requester.
-- If we dropped those records, we would understate the real user impact and reduce the evidentiary power of the KPI.
+    Validated -->|anomalies| Quarantine["Quarantined Data"]
+```
 
-### Resolution Matching, Time-Travel & Censoring
-None of the raw sources record "this request was resolved" directly. Resolution
-is inferred by joining each request thread against the mess-roster,
-finance-dispute, and academic-credit sources on `student_id`, described above.
-Because those events are keyed only by student (not by request), each request
-is matched to the **earliest unclaimed** resolution event for that student at
-or after the request's own submission time — so a student's second request
-can never reuse the event that already closed their first one, and a
-resolution can never be attributed to a request that didn't exist yet. See
-`WorkflowModeler.resolve_request_timestamps` for the exact rule; this is the
-single most consequential FDE judgement call in the project.
+### System Architecture
 
-Temporal anomalies are then handled mathematically and transparently in the KPI calculation:
+```mermaid
+flowchart TD
+    A["Dual-Mode Sources\nCSV/JSON Files"] --> B["Pipeline Orchestrator"]
+    C["Dual-Mode Sources\nSQLite"] --> B
 
-- `Time_Travel_Anomaly`: if a matched resolution timestamp somehow falls before the submission timestamp, the request is flagged and excluded from final KPI math because the lifecycle is invalid.
-- `Observation-Window Censoring`: if a request is still unresolved but was submitted within the last 48-hour observation window, it is treated as a censored case rather than a failure. This prevents the KPI from being biased by still-pending requests that do not yet have a full lifecycle.
-- `Black-Hole`: requests older than the observation window with no matching resolution event in any of the three downstream systems are flagged separately and counted as black-hole cases, which supports operational evidence that the inbox process is broken from a service-delivery perspective. On the current dataset this is 83.95% of all requests — the single strongest piece of evidence in the report.
+    B --> D["Extraction"]
+    D --> E["Validation"]
+    E --> F["Modeling"]
+    F --> G["Visualization"]
+```
 
-These rules ensure the KPI remains mathematically defensible while still reflecting the true operational burden of the shared inbox. The primary KPI is computed only over the requests with a confirmed resolution (`total_included_requests`), not over all requests — see `findings/final_business_evidence_*.md` for why that distinction matters to the headline number.
+## Data-quality rules and FDE interpretation
+The project enforces strict validation logic without silently fixing source problems.
 
-## Repository Structure
-- `src/`: pipeline implementation modules
-- `data/`: raw, validated, quarantined, and modeled data layers
-- `tests/`: automated pytest coverage for extraction, validation, modeling, pipeline orchestration, and reporting
-- `findings/`: business evidence, methodology notes, and historical exports
+- No Silent Fixes: malformed API payloads, critical null values, invalid identifiers, duplicate inbox entries, and irreconcilable identity rows are quarantined instead of repaired or quietly dropped
+- Identity Preservation: unknown or unmapped student addresses remain visible as `Unknown Identity` rather than being filtered out, because the operational burden itself is part of the evidence
+- Resolution Matching: each request thread is matched to the earliest downstream resolution event for that student at or after the request submission time; later requests cannot reuse a resolution that already closed an earlier issue
+- Time-Travel Handling: if a matched resolution timestamp occurs before the request submission timestamp, the request is flagged and excluded from final KPI math
+- Observation-Window Censoring: unresolved requests submitted within the last 48 hours are treated as censored rather than as failures
+- Black-Hole Reporting: older unresolved requests with no valid downstream match are counted separately and treated as operational evidence that the inbox is failing to resolve work
 
-## Summary
-This project is designed to provide a rigorous, auditable, and business-relevant demonstration that the shared inbox is not a sustainable service mechanism. The data pipeline preserves anomalies, quantifies the burden on students, and produces executive evidence proving why a centralized request system is the correct operational response.
+These rules ensure the KPI remains mathematically defensible while still reflecting the true operational burden of the shared inbox. The evidence captures the raw problem instead of sanitizing it away, which is the core FDE principle behind this project.
+
+## Known, unknown, assumptions, and limitations
+
+| Category | Statement |
+| --- | --- |
+| Known | The raw inbox captures student requests, the directory provides identity resolution, and downstream operational systems provide resolution evidence for mess, finance, and academic corrections |
+| Known | The pipeline preserves malformed records and isolates them in quarantine so the original operational evidence remains visible and auditable |
+| Known | Follow-up contacts from phone, walk-in, or repeated attempts are treated as evidence of additional burden on the student |
+| Unknown | The precise underlying reason for a specific unresolved request may not be available from the dataset alone |
+| Unknown | No raw source explicitly says "this request was resolved" in the inbox; resolution is inferred from downstream operational events |
+| Assumption | Request lifecycles are reconstructed by matching each request to the earliest valid downstream resolution event for the same student at or after the request submission time |
+| Assumption | Unknown or unmapped identities are operationally relevant and should not be silently discarded |
+| Limitation | The pipeline is batch-oriented rather than streaming, so it is designed for evidence generation rather than real-time operational monitoring |
+| Limitation | The model is conservative: unresolved and censored cases are not treated as equal to a successful resolution without follow-up |
+| Limitation | The KPI is focused on burden and resolution quality rather than direct causal attribution for every unresolved case |
+
+## Repository map
+
+```text
+.
+├── README.md
+├── requirements.txt
+├── src/
+│   ├── __init__.py
+│   ├── config.py
+│   ├── extract.py
+│   ├── validate.py
+│   ├── model.py
+│   ├── pipeline.py
+│   └── visualize.py
+├── data/
+│   ├── raw/
+│   │   ├── raw_student_alert_inbox_final.csv
+│   │   ├── student_directory_master.csv
+│   │   ├── api_student_interactions.json
+│   │   ├── mess_roster_updates.csv
+│   │   ├── finance_fee_disputes_Q3.csv
+│   │   └── academic_credits_master.csv
+│   ├── validated/
+│   ├── quarantine/
+│   └── modeled/
+│       ├── student_requests.csv
+│       └── kpi_metrics.json
+├── findings/
+│   ├── 00_source_map_and_workflow_diagram.md
+│   ├── 01_dataset_reconnaissance.md
+│   ├── 02_inbox_simulation_spec.md
+│   ├── 03_extraction_spec.md
+│   ├── 04_validation_spec.md
+│   ├── 05_modeling_spec.md
+│   ├── 06_pipeline_spec.md
+│   ├── 07_evidence_spec.md
+│   ├── 08_review_findings_and_fixes.md
+│   ├── final_business_evidence_2026-09-27.md
+│   ├── final_business_evidence_2026-09-28.md
+│   └── final_business_evidence.md
+├── tests/
+│   ├── test_data_integrity.py
+│   ├── test_extract.py
+│   ├── test_model.py
+│   ├── test_pipeline.py
+│   ├── test_validate.py
+│   └── test_visualize.py
+└── .venv/ (local environment, not committed)
+```
+
+This repository organizes the workflow into a clear evidence chain: raw fact capture, validation and quarantine, modeled lifecycle reconstruction, and business evidence generation. The result is an auditable operational argument that explains why a centralized request system is needed and how the shared inbox creates avoidable burden on students.

@@ -7,12 +7,12 @@ pipeline as it exists after the review fixes described in
 
 ## 1. Business questions -> required information -> source systems
 
-| Business question | Required information | Source system | Format | Owner / grain |
+| Business question | Required information | Source system | Format / Retrieval Mode | Owner / grain |
 |---|---|---|---|---|
-| How much of the shared inbox's request volume actually gets closed out? | Request creation events, resolution events | `data/raw_student_alert_inbox_final.csv`, `data/mess_roster_updates.csv`, `data/finance_fee_disputes_Q3.csv`, `data/academic_credits_master.csv` | CSV | Registrar mailbox export; mess office; finance office; academic office. One row per message / clearance / dispute / credit action. |
-| Who sent the request, and can we identify them? | Sender identity resolution | `data/student_directory_master.csv` | CSV | Registrar's student master. One row per enrolled student. |
-| Did the student have to chase the request again? | Follow-up contact events | `data/api_student_interactions.json` | JSON (mixed schema, includes bare HTTP error envelopes) | Phone/walk-in logging system. One row per logged contact attempt. |
-| (Not yet integrated — see Known/Unknown) | Independent corroboration of "Walk-in" contacts; pre-2024 ticket history | `data/admin_bldg_wifi_auth_logs.csv`, `data/legacy_alert_archive_2024.csv` | CSV | Building WiFi controller (keyed by `mac_address`, no student linkage); legacy archive (keyed by `ticket_ref`, no student linkage). |
+| How much of the shared inbox's request volume actually gets closed out? | Request creation events, resolution events | `data/raw_student_alert_inbox_final.csv`, `data/mess_roster_updates.csv`, `data/finance_fee_disputes_Q3.csv`, `data/academic_credits_master.csv` | CSV / Flat File | Registrar mailbox export; mess office; finance office; academic office. One row per message / clearance / dispute / credit action. |
+| Who sent the request, and can we identify them? | Sender identity resolution | `data/student_directory_master.csv` | SQLite Database / SQL Query | Registrar's student master. One row per enrolled student. |
+| Did the student have to chase the request again? | Follow-up contact events | `data/api_student_interactions.json` | JSON / File parsing | Phone/walk-in logging system. One row per logged contact attempt. |
+| (Not yet integrated — see Known/Unknown) | Independent corroboration of "Walk-in" contacts; pre-2024 ticket history | `data/admin_bldg_wifi_auth_logs.csv`, `data/legacy_alert_archive_2024.csv` | CSV / Flat File | Building WiFi controller (keyed by `mac_address`, no student linkage); legacy archive (keyed by `ticket_ref`, no student linkage). |
 
 `Report Ticketing/Report Ticketing.xlsx` is the public admissions-ticket
 dataset used to *synthesize* the inbox (see `generate_raw_student_alert_inbox.py`
@@ -33,6 +33,8 @@ flowchart TD
     end
 
     subgraph Extract["Extraction  (src/extract.py)"]
+        FileParse["File Parsing (CSV/JSON)"]
+        SQLiteSeed["SQLite Seed & SELECT Query"]
         RawCopy["data/raw/*  (byte-preserving landing copies)"]
     end
 
@@ -58,12 +60,15 @@ flowchart TD
         Chart["findings/kpi_breakdown_*.png"]
     end
 
-    Inbox --> RawCopy
-    Directory --> RawCopy
-    API --> RawCopy
-    Mess --> RawCopy
-    Finance --> RawCopy
-    Academic --> RawCopy
+    Inbox --> FileParse
+    API --> FileParse
+    Mess --> FileParse
+    Finance --> FileParse
+    Academic --> FileParse
+    Directory --> SQLiteSeed
+
+    FileParse --> RawCopy
+    SQLiteSeed --> RawCopy
 
     RawCopy --> VNulls --> VErr --> VDupDir --> VDupInbox --> VIdentity --> VResEvents --> Validated
 
@@ -111,10 +116,7 @@ erDiagram
 
 ## 4. Known / Unknown / Assumption / Limitation (source-map level)
 
-- **Known**: `student_directory_master.csv` provides a reliable crosswalk
-  (`student_id` <-> `enrollment_number` <-> `official_email`) that lets the
-  three resolution-event sources be joined even though they use three
-  different identifier columns.
+- **Known**: the SQLite-extracted directory crosswalk (`student_id` <-> `enrollment_number` <-> `official_email`) provides a reliable SQL-retrieved identity table that lets the three resolution-event sources be joined even though they use three different identifier columns.
 - **Known**: resolution events cover roughly 87% of the students who sent a
   request (2,181 of 2,500), so the primary KPI is judgeable for a meaningful
   share of traffic, not a token sample.
